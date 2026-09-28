@@ -15,6 +15,8 @@ export interface NativeUIShellOptions {
   enabled?: boolean;
   /** Controls eligible for native projection. Omit to enable every control; when present, only `true` controls are enabled. */
   controls?: NativeUIShellControls;
+  /** Internal: limit native projection to the Vertical Control Area. */
+  verticalBarsOnly?: boolean;
 }
 
 export interface NativeUIShellControls {
@@ -35,6 +37,22 @@ export interface NativeUIShellHandle {
   suspend(): Promise<NativeUIShellSuspension>;
   /** Stops synchronization, restores Web controls and releases native resources. */
   destroy(): Promise<void>;
+}
+
+/** Logical edge in the reading direction, matching UIVerticalBarEdge and capacitor-foldable. */
+export type VerticalBarEdge = 'leading' | 'trailing' | null;
+
+export interface VerticalBarPlacement {
+  edge: VerticalBarEdge;
+  /** Explicit rail width in CSS pixels; omitted to use the stylesheet's safe-area rules. */
+  inset?: number;
+  /** Native logical edge reported by the application's device plugin. Null or an unregistered edge uses a Web rail in verticalBarsOnly mode, or the ordinary Native UI Shell layout otherwise. Omission keeps the last supplied value. */
+  nativeEdge?: VerticalBarEdge;
+}
+
+export interface VerticalControlAreaHandle extends NativeUIShellHandle {
+  /** Applies the application's chosen placement to both Web and native controls. */
+  setPlacement(placement: VerticalBarEdge | VerticalBarPlacement, rtl?: boolean): void;
 }
 
 export interface NativeUIShellSuspension {
@@ -64,6 +82,9 @@ export interface ShellItem extends Frame {
   fontSize: number;
   fontWeight: number;
   color: string;
+  backgroundColor?: string;
+  borderColor?: string;
+  borderWidth?: number;
   badge?: ShellBadge;
   icon?: string;
   iconWidth?: number;
@@ -83,6 +104,10 @@ export interface ShellItem extends Frame {
 export interface ShellControl extends Frame {
   id: string;
   kind: NativeUIShellComponent;
+  /** Lets the native host own adaptive placement instead of mirroring the DOM frame. */
+  placement?: 'vertical-bars';
+  /** Logical Ionic toolbar slot, preserved when projecting to the vertical rail. */
+  toolbarSlot?: 'start' | 'end';
   items: ShellItem[];
   dark: boolean;
   rtl: boolean;
@@ -116,6 +141,10 @@ export interface ShellSnapshot {
   revision: number;
   transitionDuration?: number;
   viewportWidth: number;
+  /** Physical side the native rail is drawn on; the runtime resolves the logical edge through the document direction. */
+  verticalBarEdge?: 'left' | 'right';
+  /** Visible foreground modal bounds; omitted for the full page. */
+  verticalBarFrame?: Frame;
   controls: ShellControl[];
 }
 
@@ -131,7 +160,7 @@ export interface WebViewMetrics {
 }
 
 export interface NativeUIShellPlugin {
-  configure(): Promise<{ supported: boolean }>;
+  configure(options?: { verticalBarsOnly?: boolean }): Promise<{ supported: boolean }>;
   getWebViewMetrics(): Promise<WebViewMetrics>;
   update(snapshot: ShellSnapshot): Promise<{ revision: number; rejectedSearches?: string[]; rejectedControls?: string[] }>;
   clear(options: { revision: number }): Promise<void>;

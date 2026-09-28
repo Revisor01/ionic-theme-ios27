@@ -13,8 +13,9 @@ public class IonicNativeUIShellPlugin: CAPPlugin, CAPBridgedPlugin, UITabBarDele
         CAPPluginMethod(name: "clear", returnType: CAPPluginReturnPromise)
     ]
     private var host: ShellHost?
+    private var verticalBars: ShellVerticalBarsControlling?
     private var controls: [String: UIView] = [:]
-    private var searchControllers: [String: UIViewController] = [:]
+    private var searchControllers: [String: ShellSearchControlling] = [:]
     private var fingerprints: [String: ShellControl] = [:]
     private let rendering = ShellRendering()
     private var revision = 0
@@ -24,6 +25,7 @@ public class IonicNativeUIShellPlugin: CAPPlugin, CAPBridgedPlugin, UITabBarDele
     private var pendingTabExpiryWorks: [String: DispatchWorkItem] = [:]
     private var restoreTopEdge: (() -> Void)?
     private var observers: [NSObjectProtocol] = []
+    private var lastWebViewRadius: Double?
 
     public override func load() {
         for name in [UIApplication.didEnterBackgroundNotification, UIResponder.keyboardWillChangeFrameNotification, UIResponder.keyboardWillHideNotification,
@@ -40,14 +42,14 @@ public class IonicNativeUIShellPlugin: CAPPlugin, CAPBridgedPlugin, UITabBarDele
                         self.keyboardVisible = !overlap.isNull && overlap.width > 0 && overlap.height > 0
                     }
                 }
-                if !keyboard { self.host?.isHidden = true }
-                var searchOwnsKeyboard = false
-                if #available(iOS 26.0, *) {
-                    self.searchControllers.values.forEach {
-                        guard let controller = $0 as? ShellSearchController else { return }
-                        if controller.ownsKeyboardChrome { searchOwnsKeyboard = true }
-                        if !keyboard { controller.surface.isHidden = true }
-                    }
+                if !keyboard {
+                    self.host?.isHidden = true
+                    self.verticalBars?.view.isHidden = true
+                }
+                var searchOwnsKeyboard = self.verticalBars?.ownsKeyboardChrome == true
+                self.searchControllers.values.forEach { controller in
+                    if controller.ownsKeyboardChrome { searchOwnsKeyboard = true }
+                    if !keyboard { controller.surface.isHidden = true }
                 }
                 if keyboard {
                     if !searchOwnsKeyboard {
@@ -79,21 +81,16 @@ public class IonicNativeUIShellPlugin: CAPPlugin, CAPBridgedPlugin, UITabBarDele
     }
 
     private func notifyWebViewMetricsChange() {
-        guard let metrics = webViewMetrics() else { return }
+        let metrics = webViewMetrics() ?? ["radius": 0]
+        let radius = metrics["radius"] as? Double ?? 0
+        guard radius != lastWebViewRadius else { return }
+        lastWebViewRadius = radius
         notifyListeners("webViewMetricsChange", data: metrics)
     }
 
     @objc func getWebViewMetrics(_ call: CAPPluginCall) {
         DispatchQueue.main.async { [weak self] in
-            guard #available(iOS 26.0, *) else {
-                call.resolve(["radius": 0])
-                return
-            }
-            guard let metrics = self?.webViewMetrics() else {
-                call.reject("WebView unavailable")
-                return
-            }
-            call.resolve(metrics)
+            call.resolve(self?.webViewMetrics() ?? ["radius": 0])
         }
     }
 
@@ -105,9 +102,10 @@ public class IonicNativeUIShellPlugin: CAPPlugin, CAPBridgedPlugin, UITabBarDele
             self?.removeControls()
             self?.revision = 0
             if #available(iOS 26.0, *) {
+                self?.bridge?.webView?.layoutIfNeeded()
                 // Ionic already paints the header edge; a second native effect can
                 // add a dark scrim when the OS and Web themes differ.
-                if let effect = self?.bridge?.webView?.scrollView.topEdgeEffect {
+                if call.getBool("verticalBarsOnly") != true, let effect = self?.bridge?.webView?.scrollView.topEdgeEffect {
                     let hidden = effect.isHidden
                     effect.isHidden = true
                     self?.restoreTopEdge = { [weak effect] in effect?.isHidden = hidden }
@@ -133,9 +131,7 @@ public class IonicNativeUIShellPlugin: CAPPlugin, CAPBridgedPlugin, UITabBarDele
     }
 
     private func removeControl(_ id: String, duration: TimeInterval = 0) {
-        if #available(iOS 26.0, *) {
-            (searchControllers.removeValue(forKey: id) as? ShellSearchController)?.detach()
-        }
+        searchControllers.removeValue(forKey: id)?.detach()
         if let control = controls.removeValue(forKey: id) { ShellCrossfade.retire(control, duration: duration) }
         fingerprints.removeValue(forKey: id)
         pendingTabSelections.removeValue(forKey: id)
@@ -146,6 +142,8 @@ public class IonicNativeUIShellPlugin: CAPPlugin, CAPBridgedPlugin, UITabBarDele
         Array(controls.keys).forEach { removeControl($0, duration: duration) }
         host?.removeFromSuperview()
         host = nil
+        verticalBars?.detach()
+        verticalBars = nil
         rendering.clear()
         pendingTabSelections.removeAll()
         pendingTabExpiryWorks.values.forEach { $0.cancel() }
@@ -192,21 +190,18 @@ public class IonicNativeUIShellPlugin: CAPPlugin, CAPBridgedPlugin, UITabBarDele
             guard let snapshot = try? call.decode(ShellSnapshot.self), snapshot.isValid else {
                 call.reject("Invalid control snapshot"); return
             }
+            self.notifyWebViewMetricsChange()
             let duration = ShellCrossfade.duration(snapshot.transitionDuration)
             let existing = Set(self.controls.keys)
-            let snapshots = snapshot.controls
+            let verticalBars = snapshot.controls.filter { $0.placement == .verticalBars }
+            let snapshots = snapshot.controls.filter { $0.placement != .verticalBars }
+            let verticalSearchActive = verticalBars.contains { $0.search.map { $0.available && $0.active } ?? false }
             let width = snapshot.viewportWidth
             self.revision = next
-            if snapshots.isEmpty {
+            if snapshots.isEmpty && verticalBars.isEmpty {
                 self.removeControls(duration: duration)
                 call.resolve(["revision": next]); return
             }
-            let host = self.host ?? ShellHost()
-            self.host = host
-            host.frame = parent.bounds
-            host.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            host.backgroundColor = .clear
-            host.isAccessibilityElement = false
             let scale = webView.bounds.width / width
             let retained = Set(snapshots.map(\.id))
             for id in Array(self.controls.keys) where !retained.contains(id) {
@@ -214,8 +209,42 @@ public class IonicNativeUIShellPlugin: CAPPlugin, CAPBridgedPlugin, UITabBarDele
             }
             var rejectedControls: [String] = []
             var fabs: [(ShellFab, ShellControl)] = []
-            var searches: [(ShellSearchController, ShellControl, CGRect, CGRect, UIView?, Bool)] = []
+            var searches: [(ShellSearchControlling, ShellControl, CGRect, CGRect, UIView?, Bool)] = []
             var rejectedSearches: [String] = []
+            if verticalBars.isEmpty || (self.keyboardVisible && !verticalSearchActive) {
+                self.verticalBars?.detach()
+                self.verticalBars = nil
+                if self.keyboardVisible { rejectedControls.append(contentsOf: verticalBars.map(\.id)) }
+            } else if let owner = self.bridge?.viewController {
+                let rail = self.verticalBars ?? ShellVerticalBarsController(
+                    activate: { [weak self] id in self?.activate(id) },
+                    changed: { [weak self] id, phase, value, composing, valueVersion in
+                        self?.searchChanged(id, phase: phase, value: value, composing: composing, valueVersion: valueVersion) ?? 0
+                    })
+                self.verticalBars = rail
+                rail.attach(to: owner, in: owner.view)
+                if let frame = snapshot.verticalBarFrame {
+                    rail.view.frame = webView.convert(frame.rect.applying(CGAffineTransform(scaleX: scale, y: scale)), to: owner.view)
+                } else {
+                    rail.view.frame = owner.view.bounds
+                }
+                rail.apply(verticalBars, rendering: self.rendering, edge: snapshot.verticalBarEdge ?? "right")
+                rail.view.isHidden = false
+            } else {
+                rejectedControls.append(contentsOf: verticalBars.map(\.id))
+            }
+            if snapshots.isEmpty {
+                self.host?.removeFromSuperview()
+                self.host = nil
+                call.resolve(["revision": next, "rejectedControls": rejectedControls])
+                return
+            }
+            let host = self.host ?? ShellHost()
+            self.host = host
+            host.frame = parent.bounds
+            host.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            host.backgroundColor = .clear
+            host.isAccessibilityElement = false
             UIView.performWithoutAnimation {
                 if host.superview !== parent { parent.addSubview(host) }
                 for node in snapshots {
@@ -233,7 +262,7 @@ public class IonicNativeUIShellPlugin: CAPPlugin, CAPBridgedPlugin, UITabBarDele
                         rejectedControls.append(id)
                     }
                     // Only native search owns its keyboard; other controls return to Web.
-                    if self.keyboardVisible && (self.searchControllers[id] as? ShellSearchController)?.ownsKeyboard != true {
+                    if self.keyboardVisible && self.searchControllers[id]?.ownsKeyboard != true {
                         reject(); continue
                     }
                     let local = node.frame.rect
@@ -241,20 +270,16 @@ public class IonicNativeUIShellPlugin: CAPPlugin, CAPBridgedPlugin, UITabBarDele
                                                        width: local.width * scale, height: local.height * scale), to: parent)
                     if let search = node.search {
                         guard let owner = self.bridge?.viewController else { rejectedSearches.append(id); continue }
-                        let controller: ShellSearchController
+                        let controller: ShellSearchControlling
                         let previousCover = self.controls[id]
-                        let replacing = self.searchControllers[id] as? ShellSearchController
+                        let replacing = self.searchControllers[id]
                         if let existing = replacing { controller = existing }
                         else {
                             // Keep the ordinary UITabBar cover until the search controller applies.
                             controller = ShellSearchController()
                             controller.activate = { [weak self] id in self?.activate(id) }
                             controller.changed = { [weak self] id, phase, value, composing, valueVersion in
-                                guard let self else { return 0 }
-                                self.sequence += 1
-                                self.notifyListeners("search", data: ["id": id, "phase": phase.rawValue, "value": value,
-                                    "composing": composing, "valueVersion": valueVersion, "sequence": self.sequence, "revision": self.revision])
-                                return self.sequence
+                                self?.searchChanged(id, phase: phase, value: value, composing: composing, valueVersion: valueVersion) ?? 0
                             }
                             controller.attach(to: owner, in: owner.view)
                             self.searchControllers[id] = controller
@@ -353,6 +378,14 @@ public class IonicNativeUIShellPlugin: CAPPlugin, CAPBridgedPlugin, UITabBarDele
             schedulePendingTabExpiry(controlId, until: pending.until)
         }
         activate(itemId)
+    }
+
+    private func searchChanged(_ id: String, phase: ShellSearchPhase, value: String,
+                               composing: Bool, valueVersion: Int) -> Int {
+        sequence += 1
+        notifyListeners("search", data: ["id": id, "phase": phase.rawValue, "value": value,
+            "composing": composing, "valueVersion": valueVersion, "sequence": sequence, "revision": revision])
+        return sequence
     }
 
     private func activate(_ id: String) {

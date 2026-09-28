@@ -22,6 +22,18 @@ final class ShellSnapshotTests: XCTestCase {
         try JSValueDecoder().decode(ShellSnapshot.self, from: ["revision": 1, "viewportWidth": width, "controls": controls])
     }
 
+    func testModalRailFrameIsOptionalAndRequiresPositiveBounds() throws {
+        var payload: JSObject = ["revision": 1, "viewportWidth": 466.0, "controls": [control()]]
+        let page = try JSValueDecoder().decode(ShellSnapshot.self, from: payload)
+        XCTAssertNil(page.verticalBarFrame)
+        for height in [339.0, 0.0, -1.0] {
+            payload["verticalBarFrame"] = ["x": 0.0, "y": 339.0, "width": 466.0, "height": height]
+            let modal = try JSValueDecoder().decode(ShellSnapshot.self, from: payload)
+            XCTAssertEqual(modal.isValid, height > 0)
+            XCTAssertEqual(modal.verticalBarFrame?.y, 339)
+        }
+    }
+
     @MainActor func testTabTypographyPreservesCSSWeightsAndSize() throws {
         let weights: [UIFont.Weight] = [.ultraLight, .thin, .light, .regular, .medium, .semibold, .bold, .heavy, .black]
         let tab = UITabBarItem()
@@ -35,6 +47,53 @@ final class ShellSnapshotTests: XCTestCase {
                 XCTAssertEqual(font, UIFont.systemFont(ofSize: 19, weight: weight), "CSS weight \(cssWeight)")
             }
         }
+    }
+
+    @MainActor func testVerticalBarsPreserveButtonAppearance() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Requires SwiftUI adaptive controls") }
+        let controls = try decode([control(["kind": "ion-buttons", "items": [
+            item(["backgroundColor": "rgb(0, 122, 255)"]),
+            item(["id": "outline", "borderColor": "rgb(255, 0, 0)", "borderWidth": 2.0])
+        ]])]).controls
+        XCTAssertEqual(controls.first?.items.first?.content.backgroundColor, "rgb(0, 122, 255)")
+        let model = ShellVerticalBarsModel()
+        model.apply(controls, rendering: ShellRendering())
+        XCTAssertNotNil(model.groups.first?.items.first?.background)
+        XCTAssertNotNil(model.groups.first?.items.last?.borderColor)
+        XCTAssertEqual(model.groups.first?.items.last?.borderWidth, 2)
+        model.apply(try decode([control(["kind": "ion-button"])]).controls, rendering: ShellRendering())
+        XCTAssertNil(model.groups.first?.items.first?.background)
+        XCTAssertNil(model.groups.first?.items.first?.borderColor)
+        XCTAssertEqual(model.groups.first?.items.first?.borderWidth, 0)
+    }
+
+    @MainActor func testVerticalBarsTabOptimismWaitsForWebAndRollsBackWhenStale() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Requires SwiftUI adaptive tabs") }
+        func tabs(_ selected: String, includeRight: Bool = true) throws -> [ShellControl] {
+            var items = [item(["id": "left", "selected": selected == "left"])]
+            if includeRight {
+                items.append(item(["id": "right", "selected": selected == "right",
+                    "badge": ["value": "3", "color": "rgb(255, 0, 0)", "textColor": "rgb(255, 255, 255)"]]))
+            }
+            return try decode([control(["kind": "ion-tab-bar", "items": items])]).controls
+        }
+        let model = ShellVerticalBarsModel()
+        let rendering = ShellRendering()
+        model.apply(try tabs("left"), rendering: rendering, now: 100)
+        XCTAssertEqual(model.tabs.last?.badge?.value, "3")
+        model.select("right", now: 100, ttl: 10)
+        model.apply(try tabs("left"), rendering: rendering, now: 101)
+        XCTAssertEqual(model.selection, "right", "a stale Web echo must not undo the optimistic selection")
+        model.apply(try tabs("right"), rendering: rendering, now: 102)
+        XCTAssertEqual(model.selection, "right", "the matching Web echo confirms the selection")
+
+        model.apply(try tabs("left"), rendering: rendering, now: 200)
+        model.select("right", now: 200, ttl: 10)
+        model.apply(try tabs("left"), rendering: rendering, now: 211)
+        XCTAssertEqual(model.selection, "left", "an expired selection rolls back to Web state")
+        model.select("right", now: 220, ttl: 10)
+        model.apply(try tabs("left", includeRight: false), rendering: rendering, now: 221)
+        XCTAssertEqual(model.selection, "left", "a removed target rolls back immediately")
     }
 
     @MainActor func testSegmentSelectionEchoPreservesNativeViewsAndActionsUseUpdatedItems() throws {
@@ -546,6 +605,43 @@ final class ShellSnapshotTests: XCTestCase {
         let searchBar = try XCTUnwrap(navigation.topViewController?.navigationItem.searchController?.searchBar)
         controller.searchBar(searchBar, textDidChange: "query")
         XCTAssertEqual(phases, ["input"])
+    }
+
+    func testVerticalSearchBridgesInputFocusAndDismissalWithoutStaleWebEchoes() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Requires native glass search") }
+        func node(active: Bool, value: String = "", version: Int = 0) throws -> ShellControl {
+            let search: JSObject = ["id": "search", "field": item(),
+                "trigger": item(["id": "trigger"]), "closeId": "close", "active": active,
+                "available": true, "focused": false, "value": value, "placeholder": "Search",
+                "disabled": false, "editSequence": 0, "valueVersion": version]
+            return try XCTUnwrap(decode([control(["kind": "ion-tab-bar", "placement": "vertical-bars",
+                "search": search, "items": [item(["id": "first", "selected": true]), item(["id": "second"])]])]).controls.first)
+        }
+        var actions: [String] = []
+        var values: [String] = []
+        let rail = UIView()
+        let model = ShellVerticalSearchModel(try XCTUnwrap(node(active: false).search), in: rail,
+            activate: { actions.append($0) },
+            changed: { _, _, value, _, _ in values.append(value); return values.count })
+        model.present(true)
+        XCTAssertEqual(actions, ["trigger"])
+        model.apply(try XCTUnwrap(node(active: true).search))
+        XCTAssertTrue(model.presented)
+        model.input("native query")
+        XCTAssertEqual(values, ["native query"])
+        model.apply(try XCTUnwrap(node(active: true).search))
+        XCTAssertEqual(model.text, "native query")
+        // The first presentation acknowledgement must not undo native focus.
+        model.focus(true)
+        model.apply(try XCTUnwrap(node(active: true).search))
+        XCTAssertTrue(model.focused)
+        model.apply(try XCTUnwrap(node(active: true, value: "application", version: 1).search))
+        XCTAssertEqual(model.text, "application")
+        model.present(false)
+        XCTAssertEqual(actions, ["trigger", "close"])
+        model.apply(try XCTUnwrap(node(active: false).search))
+        XCTAssertFalse(model.presented)
+        XCTAssertFalse(model.focused)
     }
 
 }

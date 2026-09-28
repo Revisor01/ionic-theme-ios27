@@ -30,7 +30,7 @@ On Capacitor iOS, the optional, experimental [Native UI Shell](https://docs.rdla
 
 ### Follow the user's device
 
-Pair the iOS 26 and iOS 27 themes so supported Safari versions can present the design of each generation: the iOS 26 look for iOS 26 users and the iOS 27 look for iOS 27 users. The [default setup](https://docs.rdlabo.dev/projects/ionic-theme-ios27#get-started) uses browser feature checks to select the corresponding **styles**; it does not read the iOS version. When both packages are installed, keep the **page transition** on the iOS 27 animation. On even earlier iOS versions, Ionic's default iOS appearance remains when Safari supports neither feature. In a Capacitor iOS app, Native UI Shell's UIKit material follows the installed iOS version.
+Pair the iOS 26 and iOS 27 themes so supported Safari versions can present the design of each generation: the iOS 26 look for iOS 26 users and the iOS 27 look for iOS 27 users. The [default setup](https://docs.rdlabo.dev/projects/ionic-theme-ios27/docs/readme#get-started) uses browser feature checks to select the corresponding **styles**; it does not read the iOS version. When both packages are installed, keep the **page transition** on the iOS 27 animation. On even earlier iOS versions, Ionic's default iOS appearance remains when Safari supports neither feature. In a Capacitor iOS app, Native UI Shell's UIKit material follows the installed iOS version.
 
 ## Get started
 
@@ -121,6 +121,21 @@ Use this markup to preview the inset grouped list look. For the list structure t
 
 ## Optional setups
 
+### Support iPhone Duo without the iOS 27 theme (experimental)
+
+Keep your existing Ionic theme and move tabs and supported toolbar actions into a vertical side area. **Start in Chrome** with one stylesheet, an app class, and `enableVerticalControlArea()`; then connect the layout to iPhone Duo device events for the system rail and hinge posture.
+
+Device state is supplied by [`@erkamyaman/capacitor-foldable`](https://github.com/erkamyaman/capacitor-foldable), installed in your app:
+
+```bash
+npm install @erkamyaman/capacitor-foldable
+npx cap sync
+```
+
+Use its `getBarPlacement()` / `barPlacementChange` and `getFoldState()` / `foldStateChange` APIs to drive the theme's layout. Device monitoring is not bundled with the theme.
+
+Follow [iPhone Duo with your existing theme](https://docs.rdlabo.dev/projects/ionic-theme-ios27/docs/iphone-duo-with-original-theme) for the browser preview and iOS setup. For shared layout rules and APIs, see [iPhone Duo support](https://docs.rdlabo.dev/projects/ionic-theme-ios27/docs/iphone-duo). Available in `1.2.0-0` as an experimental feature; APIs and supported behavior may change.
+
 ### Use only the iOS 27 theme
 
 Install only `@rdlabo/ionic-theme-ios27` and import its styles unconditionally in your global stylesheet:
@@ -207,6 +222,8 @@ For Ionic 9 Angular, import `isPlatform` and `provideIonicAngular` from `@ionic/
 - [ESLint](https://docs.rdlabo.dev/projects/ionic-theme-ios27/docs/eslint) — check list structure with ESLint rules.
 - [Features](https://docs.rdlabo.dev/projects/ionic-theme-ios27/docs/features) — CSS variables, Liquid Glass, selective imports, and dark mode.
 - [Native UI Shell (Experimental)](https://docs.rdlabo.dev/projects/ionic-theme-ios27/docs/native-ui-shell) — project supported Ionic controls, text, and icons into UIKit.
+- [iPhone Duo support (experimental)](https://docs.rdlabo.dev/projects/ionic-theme-ios27/docs/iphone-duo) — vertical system rail, hinge posture, and split-pane layout; usable without the theme or the shell.
+- [iPhone Duo with your existing theme (experimental)](https://docs.rdlabo.dev/projects/ionic-theme-ios27/docs/iphone-duo-with-original-theme) — standalone setup that keeps your existing Web theme.
 - [Animation](https://docs.rdlabo.dev/projects/ionic-theme-ios27/docs/animation) — tab, segment, and searchable effects.
 - [Migration from iOS 26](https://docs.rdlabo.dev/projects/ionic-theme-ios27/docs/migration) — upgrade an existing app, including stylesheet, class, and CSS variable changes.
 - [iOS 26 migration history](https://docs.rdlabo.dev/projects/ionic-theme-ios26/docs/migration) — earlier major-version changes for the previous package.
@@ -216,6 +233,18 @@ For Ionic 9 Angular, import `isPlatform` and `provideIonicAngular` from `@ionic/
 **iOS 26 theme:** See the [iOS 26 documentation](https://docs.rdlabo.dev/projects/ionic-theme-ios26).
 
 ## Development & Testing
+
+### JavaScript module support
+
+The package ships ES modules and TypeScript declarations. Relative imports in the
+library source use explicit `.js` extensions, including dynamic imports; TypeScript
+resolves these to the corresponding `.ts` sources. CommonJS output is not provided.
+Public JavaScript entry points can be imported in Node.js without a DOM, but UI
+operations require a browser or the supported Capacitor environment.
+
+Run `npm run build && npm run test:esm` to verify the npm tarball's public entry
+points and all relative JavaScript specifiers, including lazy imports. CI runs this
+check on Node.js 24 alongside the build.
 
 ### Demo Application
 

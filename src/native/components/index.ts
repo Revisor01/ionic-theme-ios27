@@ -5,7 +5,7 @@ import * as menuButton from './ion-menu-button.js';
 import * as tabBar from './ion-tab-bar.js';
 import * as segment from './ion-segment.js';
 import * as fab from './ion-fab.js';
-import { visible } from '../shared/dom.js';
+import { isDisabledButtonGroupChild, isVerticalBarsSource, visible } from '../shared/dom.js';
 import type { Candidate, Identify } from '../shared/candidate.js';
 
 // Static composition only. Each component declares its own tag, discovery and reader.
@@ -27,10 +27,24 @@ export const motionSelector = [
   ...components.filter((component) => 'tracksMotion' in component && component.tracksMotion).map((component) => component.tag),
 ].join(', ');
 
+export const isVerticalBarsCandidate = isVerticalBarsSource;
+
 export const readCandidate = (element: HTMLElement, id: Identify): Candidate | undefined => {
-  if (!element.classList.contains('ios') || !visible(element) || element.closest('ion-modal, ion-popover')) return;
+  const verticalBars = isVerticalBarsCandidate(element);
+  if (
+    (!element.classList.contains('ios') && !verticalBars) ||
+    !visible(element, verticalBars) ||
+    element.closest('ion-popover') ||
+    (element.closest('ion-modal') && !verticalBars)
+  )
+    return;
   const style = getComputedStyle(element);
-  if (!style.getPropertyValue('--ios-theme-glass-background-rgb').trim() && !style.getPropertyValue('--ios26-glass-background-rgb').trim())
+  if (
+    !isDisabledButtonGroupChild(element) &&
+    !style.getPropertyValue('--ios-theme-glass-background-rgb').trim() &&
+    !style.getPropertyValue('--ios26-glass-background-rgb').trim() &&
+    !verticalBars
+  )
     return;
   if (element.contains(element.ownerDocument.activeElement)) return;
   return components.find((component) => component.tag === element.localName)?.read(element, id);

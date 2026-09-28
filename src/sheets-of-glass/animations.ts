@@ -3,6 +3,21 @@ import { AnimationPosition, EffectScales } from './interfaces.js';
 import { createAnimation, GestureDetail } from '@ionic/core';
 import { getStep } from '../utils.js';
 
+// Work in main/cross-axis coordinates so native horizontal samples also drive the rail.
+export const animationRect = (element: Element, vertical = false) => {
+  const rect = element.getBoundingClientRect();
+  return vertical
+    ? { left: rect.top, top: rect.left, right: rect.bottom, width: rect.height, height: rect.width, x: rect.y, y: rect.x }
+    : rect;
+};
+const translate = (x: number, y: number, vertical: boolean) => `translate3d(${vertical ? y : x}px, ${vertical ? x : y}px, 0)`;
+const stretchTransform = (x: number, y: number, vertical: boolean) => `scale(${vertical ? y : x}, ${vertical ? x : y})`;
+const mainSize = (element: HTMLElement, vertical: boolean) => (vertical ? element.offsetHeight : element.offsetWidth);
+const axisScale = (transform: string, vertical: boolean) => {
+  const matrix = new DOMMatrixReadOnly(transform);
+  return vertical ? { a: matrix.d, d: matrix.a } : matrix;
+};
+
 export const getScaleAnimation = (effectElement: Element): Animation => {
   return createAnimation().addElement(effectElement.shadowRoot!.querySelector<HTMLElement>('[part="native"]')!).easing('ease-out');
 };
@@ -46,55 +61,60 @@ const tabBarTapFrames = [
 ];
 
 // UITabBarController presentation-layer samples: horizontal stretch precedes vertical stretch.
-export const createTabBarPressAnimation = (effect: HTMLElement, from: HTMLElement, to: HTMLElement, bar: HTMLElement): Animation => {
-  const box = bar.getBoundingClientRect();
+export const createTabBarPressAnimation = (
+  effect: HTMLElement,
+  from: HTMLElement,
+  to: HTMLElement,
+  bar: HTMLElement,
+  vertical = false,
+): Animation => {
+  const box = animationRect(bar, vertical);
   const center = box.left + box.width / 2;
-  const left = center - bar.offsetWidth / 2;
-  const fromBox = from.getBoundingClientRect();
-  const toBox = to.getBoundingClientRect();
-  const parentScale = box.width / bar.offsetWidth;
-  const buttonScale = new DOMMatrixReadOnly(getComputedStyle(from).transform);
+  const left = center - mainSize(bar, vertical) / 2;
+  const fromBox = animationRect(from, vertical);
+  const toBox = animationRect(to, vertical);
+  const parentScale = box.width / mainSize(bar, vertical);
+  const buttonScale = axisScale(getComputedStyle(from).transform, vertical);
   const width = fromBox.width / parentScale / buttonScale.a;
   const height = fromBox.height / parentScale / buttonScale.d;
   const start = (fromBox.left + fromBox.width / 2 - box.left) / parentScale;
   const end = (toBox.left + toBox.width / 2 - box.left) / parentScale;
   const selected = from === to;
+  const growth = vertical ? 20 / 16 : 1;
   const frames = tabBarPressFrames.map(([time, position, extraWidth, extraHeight, expansion]) => {
-    const scale = 1 + (14.14 / bar.offsetWidth) * expansion;
+    const scale = vertical ? 1 : 1 + (14.14 / mainSize(bar, vertical)) * expansion;
     // A selected item expands in place, without the transfer's sideways deformation.
     const press = 1 - Math.exp(-18 * time) * (1 + 18 * time);
     return {
       offset: time / 0.9,
       x: center + (left + start + (end - start) * position - center) * scale - width / 2,
-      sx: ((width + (selected ? 16 * press : extraWidth)) * scale) / width,
-      sy: ((height + (selected ? 16 * press : extraHeight)) * scale) / height,
+      sx: ((width + (selected ? 16 * press : extraWidth) * growth) * scale) / width,
+      sy: ((height + (selected ? 16 * press : extraHeight) * growth) * scale) / height,
     };
   });
   const move = createAnimation()
     .addElement(effect)
     .beforeStyles({
-      width: `${width}px`,
-      height: `${height}px`,
+      width: `${vertical ? height : width}px`,
+      height: `${vertical ? width : height}px`,
       display: 'block',
       opacity: '1',
     })
-    .keyframes(
-      frames.map(({ offset, x }) => ({ offset, transform: `translate3d(${x}px, ${box.top + box.height / 2 - height / 2}px, 0)` })),
-    );
+    .keyframes(frames.map(({ offset, x }) => ({ offset, transform: translate(x, box.top + box.height / 2 - height / 2, vertical) })));
   const stretch = getScaleAnimation(effect)
     .easing('linear')
-    .keyframes(frames.map(({ offset, sx, sy }) => ({ offset, transform: `scale(${sx}, ${sy})` })));
+    .keyframes(frames.map(({ offset, sx, sy }) => ({ offset, transform: stretchTransform(sx, sy, vertical) })));
   return createAnimation().duration(900).easing('linear').addAnimation([move, stretch]);
 };
 
 // Drag samples: faster movement stretches sideways, then rebounds vertically at rest.
-export const createTabBarDragAnimation = (effect: HTMLElement, bar: HTMLElement, velocity: number): Animation => {
+export const createTabBarDragAnimation = (effect: HTMLElement, bar: HTMLElement, velocity: number, vertical = false): Animation => {
   const native = effect.shadowRoot!.querySelector<HTMLElement>('[part="native"]')!;
-  const current = new DOMMatrixReadOnly(native.style.transform || getComputedStyle(native).transform);
-  const { width, height } = effect.getBoundingClientRect();
-  const scale = 1 + 14.14 / bar.offsetWidth;
-  const restX = ((width + 16) * scale) / width;
-  const restY = ((height + 16) * scale) / height;
+  const current = axisScale(native.style.transform || getComputedStyle(native).transform, vertical);
+  const { width, height } = animationRect(effect, vertical);
+  const scale = vertical ? 1 : 1 + 14.14 / mainSize(bar, vertical);
+  const restX = ((width + (vertical ? 20 : 16)) * scale) / width;
+  const restY = ((height + (vertical ? 20 : 16)) * scale) / height;
   // Approximate the 100/600pt/s UIKit samples; keep deformation bounded for fast swipes.
   const stretch = Math.min(16, 32 * velocity * velocity) * scale;
   const rebound = Math.max(stretch, (current.a - restX) * width) * 0.8;
@@ -102,10 +122,10 @@ export const createTabBarDragAnimation = (effect: HTMLElement, bar: HTMLElement,
     .duration(500)
     .easing('linear')
     .keyframes([
-      { offset: 0, transform: `scale(${current.a}, ${current.d})` },
-      { offset: 0.2, transform: `scale(${restX + stretch / width}, ${restY - stretch / height})` },
-      { offset: 0.44, transform: `scale(${restX - rebound / width}, ${restY + rebound / height})` },
-      { offset: 1, transform: `scale(${restX}, ${restY})` },
+      { offset: 0, transform: stretchTransform(current.a, current.d, vertical) },
+      { offset: 0.2, transform: stretchTransform(restX + stretch / width, restY - stretch / height, vertical) },
+      { offset: 0.44, transform: stretchTransform(restX - rebound / width, restY + rebound / height, vertical) },
+      { offset: 1, transform: stretchTransform(restX, restY, vertical) },
     ]);
 };
 
@@ -114,10 +134,11 @@ export const createTabBarReleaseAnimation = (
   effectElement: Element,
   target: HTMLElement,
   tap?: { elapsed: number; distance: number },
+  vertical = false,
 ): Animation => {
   const tapElapsed = tap?.elapsed;
   const native = effectElement.shadowRoot!.querySelector<HTMLElement>('[part="native"]')!;
-  const scale = new DOMMatrixReadOnly(native.style.transform || getComputedStyle(native).transform);
+  const scale = axisScale(native.style.transform || getComputedStyle(native).transform, vertical);
   const samples = [
     [0, 1],
     [0.033, 0.85],
@@ -131,22 +152,25 @@ export const createTabBarReleaseAnimation = (
     [0.45, 0],
   ];
   const bar = target.parentElement!;
-  const box = bar.getBoundingClientRect();
-  const current = effectElement.getBoundingClientRect();
-  const targetBox = target.getBoundingClientRect();
+  const box = animationRect(bar, vertical);
+  const current = animationRect(effectElement, vertical);
+  const targetBox = animationRect(target, vertical);
   const center = box.left + box.width / 2;
-  const x = center + (targetBox.left + targetBox.width / 2 - center) / (box.width / bar.offsetWidth) - current.width / 2;
+  const x = center + (targetBox.left + targetBox.width / 2 - center) / (box.width / mainSize(bar, vertical)) - current.width / 2;
   const y = box.top + box.height / 2 - current.height / 2;
+  // The vertical platter contracts from 64pt items to 44 × 58pt on release.
+  const endScaleX = vertical ? target.offsetHeight / current.width : 1;
+  const endScaleY = vertical ? target.offsetWidth / current.height : 1;
   const elapsed = (tapElapsed ?? 0) / 1000;
   const duration = tapElapsed === undefined ? 450 : 800 - tapElapsed;
   let frames = samples.map(([time, remaining]) => ({
     offset: time / 0.45,
     x: x + (current.x - x) * remaining,
     y: y + (current.y - y) * remaining,
-    sx: 1 + (scale.a - 1) * remaining,
-    sy: 1 + (scale.d - 1) * remaining,
+    sx: endScaleX + (scale.a - endScaleX) * remaining,
+    sy: endScaleY + (scale.d - endScaleY) * remaining,
   }));
-  if (tapElapsed !== undefined) {
+  if (tapElapsed !== undefined && !vertical) {
     const nextIndex = tabBarTapFrames.findIndex(([time]) => time > elapsed);
     const previous = tabBarTapFrames[Math.max(0, nextIndex - 1)];
     const next = tabBarTapFrames[nextIndex];
@@ -159,7 +183,7 @@ export const createTabBarReleaseAnimation = (
       ...tabBarTapFrames.slice(nextIndex).map(([time, position, width, height]) => ({
         offset: (time - elapsed) / (0.8 - elapsed),
         x: x + ((current.x - x) * (1 - position)) / Math.max(0.1, 1 - progress),
-        y,
+        y: y + ((current.y - y) * (1 - position)) / Math.max(0.1, 1 - progress),
         sx: 1 + (width * (time >= 0.367 ? 1 + 0.75 * extraDistance : 1)) / current.width,
         sy: 1 + (height * (time >= 0.367 ? 1 + 0.5 * extraDistance : 1)) / current.height,
       })),
@@ -169,7 +193,7 @@ export const createTabBarReleaseAnimation = (
     .addElement(native)
     .duration(duration)
     .easing('linear')
-    .keyframes(frames.map(({ offset, sx, sy }) => ({ offset, transform: `scale(${sx}, ${sy})` })));
+    .keyframes(frames.map(({ offset, sx, sy }) => ({ offset, transform: stretchTransform(sx, sy, vertical) })));
   const move = createAnimation()
     .addElement(effectElement)
     .duration(duration)
@@ -177,7 +201,7 @@ export const createTabBarReleaseAnimation = (
     .keyframes(
       frames.map(({ offset, x, y }) => ({
         offset,
-        transform: `translate3d(${x}px, ${y}px, 0)`,
+        transform: translate(x, y, vertical),
       })),
     );
   // Blend the reflective lens into the selected surface during the final 200ms.
@@ -201,10 +225,10 @@ export const createTabBarReleaseAnimation = (
       { offset: 1, backgroundColor: selectedBackground },
     ]);
   const release = createAnimation().duration(duration).addAnimation([stretch, move, glass, selected]);
-  if (tapElapsed !== undefined) {
+  if (tapElapsed !== undefined && !vertical) {
     // A short UIKit tap keeps expanding after lift-off, then settles independently of the lens.
     // Width deltas from the 50ms tap; preserve the rendered size for an uninterrupted handoff.
-    const width = bar.offsetWidth;
+    const width = mainSize(bar, vertical);
     const expansion = box.width - width;
     const peak = Math.max(8.65, expansion);
     const platter = createAnimation()
@@ -282,6 +306,7 @@ export const createMoveAnimation = (
   detail: GestureDetail,
   tabSelectedElement: Element,
   animationPosition: AnimationPosition,
+  vertical = false,
 ): Animation => {
   return createAnimation()
     .duration(500)
@@ -295,8 +320,8 @@ export const createMoveAnimation = (
     })
     .fromTo(
       'transform',
-      `translate3d(${animationPosition.minPositionX}px, ${animationPosition.positionY}px, 0)`,
-      `translate3d(${animationPosition.maxPositionX}px, ${animationPosition.positionY}px, 0)`,
+      translate(animationPosition.minPositionX, animationPosition.positionY, vertical),
+      translate(animationPosition.maxPositionX, animationPosition.positionY, vertical),
     )
     .progressStep(getStep(detail.currentX, animationPosition));
 };

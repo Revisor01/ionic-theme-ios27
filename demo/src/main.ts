@@ -2,6 +2,9 @@ import { bootstrapApplication } from '@angular/platform-browser';
 import { createAppConfig, type IonicAnimationOptions } from './app/app.config';
 import { AppComponent } from './app/app.component';
 import { enableNativeUIShell } from '../../src/native';
+import { enableVerticalControlArea, setVerticalControlAreaPlacement } from '../../src/vertical-bars';
+import { Capacitor } from '@capacitor/core';
+import { Foldable, type BarPlacement } from '@erkamyaman/capacitor-foldable';
 import { iosTransitionAnimation, popoverEnterAnimation, popoverLeaveAnimation } from '@rdlabo/ionic-theme-ios27';
 
 /**
@@ -19,6 +22,24 @@ function loadIOSAnimations(): IonicAnimationOptions {
   };
 }
 
-// Demo forces mode: 'ios' (including Playwright), so do not gate on isPlatform('ios').
-bootstrapApplication(AppComponent, createAppConfig(loadIOSAnimations())).catch((err) => console.error(err));
-void enableNativeUIShell().then((handle) => Object.assign(window, { nativeUIShell: handle }));
+// Keep the Web fallback available in the demo; applications can choose when to enable it.
+void bootstrapApplication(AppComponent, createAppConfig(loadIOSAnimations()))
+  .then(async () => {
+    if (Capacitor.getPlatform() !== 'ios') return;
+    const applyPlacement = ({ verticalBarEdge, inset }: BarPlacement) => {
+      const app = document.querySelector('ion-app');
+      if (!app) return;
+      const enabled = app.classList.contains('ios-theme-vertical-bars') || app.hasAttribute('data-native-ui-shell-vertical-bars-suspended');
+      const rtl = app.closest('[dir]')?.getAttribute('dir') === 'rtl';
+      const current = app.classList.contains('ios-theme-vertical-bars-left') !== rtl ? 'leading' : 'trailing';
+      setVerticalControlAreaPlacement({ edge: enabled ? (verticalBarEdge ?? current) : null, nativeEdge: verticalBarEdge, inset });
+    };
+    await Foldable.addListener('barPlacementChange', applyPlacement);
+    applyPlacement(await Foldable.getBarPlacement());
+  })
+  .catch((err) => console.error(err));
+const startShell = new URLSearchParams(window.location.search).has('verticalBarsOnly') ? enableVerticalControlArea : enableNativeUIShell;
+void startShell().then((handle) => {
+  const app = document.querySelector('ion-app');
+  if (app) Object.assign(app, { nativeUIShell: handle });
+});

@@ -47,6 +47,14 @@ Add one of `tab-bar-position-start`, `tab-bar-position-center`, or `tab-bar-posi
 
 These classes do not reposition a separate `ion-fab`; leave room for it when choosing the bar's position.
 
+## Support iPhone Duo (experimental)
+
+iPhone Duo support is experimental. It is available in the `1.2.0-0` prerelease alongside Native UI Shell. Its APIs and supported behavior may change.
+
+iPhone Duo support — the vertical system rail, hinge posture, and the posture-driven split-pane layout — is independent of the iOS 27 theme and the full Native UI Shell. See [iPhone Duo support](https://docs.rdlabo.dev/projects/ionic-theme-ios27/docs/iphone-duo) for the complete setup, including device-layout monitoring without a projection runtime.
+
+For standalone setup while keeping your existing theme, see [iPhone Duo with your existing theme](https://docs.rdlabo.dev/projects/ionic-theme-ios27/docs/iphone-duo-with-original-theme).
+
 ## Two-line inset list items
 
 Place an unslotted `ion-label` immediately alongside an unslotted `ion-note` to render a two-line item. When using the iOS-style inset-list background, wrap the items in `ion-item-group`; keep `ion-list-header` outside the group.
@@ -157,19 +165,6 @@ The example uses Ionic's standard collapsible large-title structure. Scroll the 
 ```
 
 The `.ion-page` wrapper makes this embedded preview behave like a complete routed page. An application using `ion-router-outlet` normally receives that page container automatically. The inset list and its items only provide enough content to demonstrate scrolling; they are not required by `.searchbar-classic`.
-
-## Search-bar toolbars
-
-Add `.toolbar-searchbar` when an `ion-toolbar` combines a search bar with start or end buttons. The class centers the slotted controls and adjusts the spacing around the search field.
-
-```html preview
-<ion-toolbar class="toolbar-searchbar">
-  <ion-buttons slot="start">
-    <ion-button>Cancel</ion-button>
-  </ion-buttons>
-  <ion-searchbar></ion-searchbar>
-</ion-toolbar>
-```
 
 ## Opting out
 

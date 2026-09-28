@@ -1,5 +1,5 @@
 import type { ShellControl, ShellItem, NativeUIShellComponent } from '../definitions.js';
-import { frame, isDark, text, visible } from './dom.js';
+import { frame, isDark, isVerticalBarsSource, text, visible } from './dom.js';
 import { iconSource } from './icons.js';
 
 export interface Candidate {
@@ -39,7 +39,11 @@ export const appendItem = (
   content: ParentNode = child,
   label = text(child),
 ): ShellItem | undefined => {
-  if (!visible(child) || child.querySelector('input, button, a, img, canvas, video, ion-spinner, ion-avatar')) return;
+  if (
+    !visible(child, isVerticalBarsSource(candidate.element)) ||
+    child.querySelector('input, button, a, img, canvas, video, ion-spinner, ion-avatar')
+  )
+    return;
   const icons = Array.from(content.querySelectorAll<HTMLElement>('ion-icon'));
   const directSVGs = Array.from(content.querySelectorAll<SVGElement>('svg'));
   if (icons.length + directSVGs.length > 1) return undefined;
@@ -50,11 +54,19 @@ export const appendItem = (
   const labelStyle = getComputedStyle(labelElement);
   const badge = child.querySelector<HTMLElement>('ion-badge');
   const badgeStyle = badge && visible(badge) ? getComputedStyle(badge) : undefined;
+  const outline =
+    isVerticalBarsSource(child) && child.matches('ion-button') && (child as HTMLIonButtonElement).fill === 'outline'
+      ? getComputedStyle(native ?? child)
+      : undefined;
   const item: ShellItem = {
     id: id(child),
     ...frame(child.getBoundingClientRect(), candidate.element.getBoundingClientRect()),
     label,
-    accessibilityLabel: child.getAttribute('aria-label') ?? native?.getAttribute('aria-label') ?? label,
+    accessibilityLabel:
+      child.getAttribute('aria-label') ??
+      native?.getAttribute('aria-label') ??
+      (icons[0]?.getAttribute('aria-hidden') === 'true' ? null : icons[0]?.getAttribute('aria-label')) ??
+      label,
     disabled:
       !!(child as ItemElement).disabled ||
       !!(candidate.element as ItemElement).disabled ||
@@ -63,6 +75,12 @@ export const appendItem = (
     fontSize: parseFloat(labelStyle.fontSize),
     fontWeight: parseInt(labelStyle.fontWeight, 10) || 400,
     color: getComputedStyle(native ?? child).color,
+    backgroundColor:
+      isVerticalBarsSource(child) && child.matches('ion-button') && (child as HTMLIonButtonElement).fill === 'solid'
+        ? getComputedStyle(native ?? child).backgroundColor
+        : undefined,
+    borderColor: outline?.borderTopColor,
+    borderWidth: outline ? parseFloat(outline.borderTopWidth) : undefined,
     badge: badgeStyle
       ? { value: badge!.textContent?.trim() ?? '', color: badgeStyle.backgroundColor, textColor: badgeStyle.color }
       : undefined,

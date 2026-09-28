@@ -11,10 +11,14 @@ struct ShellSnapshot: Decodable {
     let revision: Int
     let transitionDuration: Double?
     let viewportWidth: Double
+    let verticalBarFrame: ShellFrame?
+    let verticalBarEdge: String?
     let controls: [ShellControl]
 
     var isValid: Bool {
         revision >= 0 && (transitionDuration.map { $0.isFinite && $0 >= 0 && $0 <= 500 } ?? true) && viewportWidth.isFinite && viewportWidth > 0 && controls.count <= 100 &&
+        (verticalBarFrame.map { $0.isValid } ?? true) &&
+        (verticalBarEdge == nil || verticalBarEdge == "left" || verticalBarEdge == "right") &&
         Set(controls.map(\.id)).count == controls.count && controls.allSatisfy(\.isValid)
     }
 }
@@ -31,8 +35,12 @@ struct ShellFrame: Decodable, Equatable {
 }
 
 struct ShellControl: Decodable, Equatable {
+    enum Placement: String, Decodable { case verticalBars = "vertical-bars" }
+    enum ToolbarSlot: String, Decodable { case start, end }
     let id: String
     let kind: ShellComponent
+    let placement: Placement?
+    let toolbarSlot: ToolbarSlot?
     let frame: ShellFrame
     let items: [ShellItem]
     let dark: Bool
@@ -40,12 +48,14 @@ struct ShellControl: Decodable, Equatable {
     let tabBarAnchor: ShellTabBar.Anchor?
     let search: ShellSearch?
 
-    private enum CodingKeys: String, CodingKey { case id, kind, items, dark, rtl, tabBarAnchor, search }
+    private enum CodingKeys: String, CodingKey { case id, kind, placement, toolbarSlot, items, dark, rtl, tabBarAnchor, search }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = try values.decode(String.self, forKey: .id)
         kind = try values.decode(ShellComponent.self, forKey: .kind)
+        placement = try values.decodeIfPresent(Placement.self, forKey: .placement)
+        toolbarSlot = try values.decodeIfPresent(ToolbarSlot.self, forKey: .toolbarSlot)
         frame = try ShellFrame(from: decoder)
         items = try values.decode([ShellItem].self, forKey: .items)
         dark = try values.decode(Bool.self, forKey: .dark)
@@ -57,6 +67,7 @@ struct ShellControl: Decodable, Equatable {
     var isValid: Bool {
         ShellComponents.supported.contains(kind) && !id.isEmpty && frame.isValid && !items.isEmpty && items.count <= 30 &&
         (!ShellButton.kinds.contains(kind) || items.count == 1) &&
+        (toolbarSlot == nil || (placement == .verticalBars && [.button, .buttons, .menuButton].contains(kind))) &&
         Set(items.map(\.id)).count == items.count && items.allSatisfy(\.isValid) &&
         (tabBarAnchor.map { kind == .tabBar && $0.isValid } ?? true) &&
         (search.map { kind == .tabBar && $0.isValid } ?? true)
@@ -96,6 +107,9 @@ struct ShellItemContent: Decodable, Equatable {
     let fontSize: Double
     let fontWeight: Double
     let color: String
+    let backgroundColor: String?
+    let borderColor: String?
+    let borderWidth: CGFloat?
     let badge: ShellBadge?
     var icon: String?
     var iconWidth: Double?

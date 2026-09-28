@@ -1,7 +1,7 @@
 {
   "name": "@rdlabo/ionic-theme-ios27",
   "private": false,
-  "version": "1.1.0",
+  "version": "1.2.0-3",
   "description": "iOS27 Theme for Ionic Framework",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -16,6 +16,10 @@
     "./native": {
       "types": "./dist/native/index.d.ts",
       "import": "./dist/native/index.js"
+    },
+    "./vertical-bars": {
+      "types": "./dist/vertical-bars.d.ts",
+      "import": "./dist/vertical-bars.js"
     }
   },
   "files": [
@@ -31,12 +35,13 @@
     "prebuild:css": "rdlabo-copy-structured-list src/styles/utils/structured-list.scss",
     "build:css": "rm -rf dist/css && sass src/styles:dist/css --style=compressed --no-source-map",
     "build:ts": "tsc",
-    "docgen": "docgen --project tsconfig.docgen.json --api NativeUIShellHandle --output-readme docs/native-ui-shell.md",
+    "docgen": "docgen --project tsconfig.docgen.json --api NativeUIShellHandle --output-readme docs/native-ui-shell.md && docgen --project tsconfig.docgen.json --api VerticalControlAreaHandle --output-readme docs/iphone-duo.md",
     "build:demo": "npm run build && cd demo && npm install && npm run build -- --configuration=production",
     "lint": "prettier --check \"./**/*.{scss,ts}\" &&  prettier --parser angular --check \"./**/*.html\"",
     "fmt": "prettier --write \"./**/*.{scss,ts}\" &&  prettier --parser angular --write \"./**/*.html\"",
     "release": "np --no-tests --no-publish",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "test:esm": "node scripts/check-esm.mjs"
   },
   "repository": {
     "type": "git",
@@ -83,5 +88,6 @@
     "ios": {
       "src": "ios"
     }
-  }
+  },
+  "type": "module"
 }

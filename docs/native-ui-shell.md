@@ -6,7 +6,7 @@ title: Native UI Shell (Experimental)
 
 Native UI Shell is experimental. Its API and supported controls may change.
 
-Native UI Shell gives an Ionic app native navigation and action controls around its Web content. The optional Capacitor iOS plugin renders supported fixed Ionic controls with UIKit and the system's Liquid Glass material. Page content, scrolling, application state and routing remain in Ionic's WebView.
+Native UI Shell gives an Ionic app native navigation and action controls around its Web content. The optional Capacitor iOS plugin renders supported fixed Ionic controls with UIKit or SwiftUI and the system's Liquid Glass material. Page content, scrolling, application state and routing remain in Ionic's WebView.
 
 ## Background
 
@@ -40,6 +40,8 @@ Native appearance follows the applied class, system or always-dark theme CSS. Sy
 
 ## Supported markup
 
+The table below describes the ordinary Native UI Shell. Vertical Bars uses the separate [toolbar action rules](https://docs.rdlabo.dev/projects/ionic-theme-ios27/docs/iphone-duo#toolbar-actions).
+
 | Ionic component                               | Supported appearance and placement                                                                        | Native rendering                                                      |
 | --------------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
 | `ion-button`                                  | `fill="default"`, standard glass, in a fixed header/footer toolbar                                        | Glass `UIButton`                                                      |
@@ -50,7 +52,7 @@ Native appearance follows the applied class, system or always-dark theme CSS. Sy
 | `ion-segment`                                 | Fixed toolbar, non-scrollable, text **or** one icon per item                                              | `UISegmentedControl`                                                  |
 | `ion-fab` / `ion-fab-button` / `ion-fab-list` | Glass FAB in an `ion-content` fixed slot; one main button and optional directional lists                  | Persistent glass `UIButton` per button; one FAB synchronization group |
 
-Only iOS-mode components with the theme variables installed are eligible. `ionic-theme-disabled`, `ios-theme-disabled`, and the legacy `ios26-disabled` on an element or ancestor always exclude it. A disabled theme on one tab/segment item keeps its whole group on the Web.
+For the ordinary Native UI Shell, only iOS-mode components with the theme variables installed are eligible. Explicitly enabled Vertical Bars is mode-independent as described below. `ionic-theme-disabled`, `ios-theme-disabled`, and the legacy `ios26-disabled` on an element or ancestor always exclude it. A disabled theme on one tab/segment item keeps its whole group on the Web.
 
 Use `ios-theme-shell-disabled` to disable only the iOS Native UI Shell while keeping the Web theme. It excludes the element and all its descendants. Adding or removing the class at runtime automatically restores Web rendering or re-evaluates native eligibility.
 
@@ -62,11 +64,11 @@ Use `ios-theme-shell-disabled` to disable only the iOS Native UI Shell while kee
 
 If a child inside a shared native surface opts out, the entire surface stays on the Web: this includes button groups, tab bars, segments and FAB lists. Opting out of the search FAB or any part of the search footer disables native search integration; the tab bar can still render natively if it remains eligible.
 
-Placement is required even when the appearance is glass. Buttons, back buttons, menu-button groups and segments need a toolbar directly inside `ion-header` or `ion-footer`, with no `ion-content` ancestor around the control. Buttons directly inside a header/footer, standalone toolbars, and toolbars or headers nested in scrolling content stay on the Web. FABs without `slot="fixed"` also stay on the Web. Moving a projected control to an excluded location restores its Web rendering; moving it back re-evaluates eligibility.
+Placement is required even when the appearance is glass. In the ordinary Native UI Shell, buttons, back buttons, menu-button groups and segments need a toolbar directly inside `ion-header` or `ion-footer`, with no `ion-content` ancestor around the control. Buttons directly inside a header/footer, standalone toolbars, and toolbars or headers nested in scrolling content stay on the Web. FABs without `slot="fixed"` also stay on the Web. Moving a projected control to an excluded location restores its Web rendering; moving it back re-evaluates eligibility. When `.ios-theme-vertical-bars` is enabled, a standard `ion-back-button` can instead be projected to the Vertical Control Area from outside a fixed toolbar, including routed content or a persistent app shell. The application chooses where to enable this mode and which Ionic component mode to use; Vertical Bars projection does not require `ios` mode classes. Collapsed headers, opted-out controls and departed pages are excluded. Full-width foreground modals can participate in Vertical Bars as described below; other overlay surfaces keep their own layout.
 
 Native tabs accept equal-width items with Ionic's default `layout="icon-top"`. The native bar uses a local compact horizontal and regular vertical size class to preserve the Web's stacked icon/label arrangement on iPad and in landscape. This does not change the app's size class. Label size and weight follow the Web snapshot. Other explicit Ionic layouts (`icon-start`, `icon-end`, `icon-bottom`, `icon-hide`, `label-hide`) and unequal item widths keep the entire tab bar on the Web. Start, center and end placement follow the original `ion-tab-bar`, including RTL. Directional `ion-icon` artwork preserves its rendered RTL flip.
 
-Standalone clear, solid and outline buttons are excluded. A glass `ion-buttons` group of two or more clear buttons is projected as one surface; its children retain separate actions. Menu buttons can also share that group. A single menu button uses its parent `ion-buttons` as the glass surface, so no Web glass is left underneath the native button. A menu button outside this theme glass remains on the Web. Mixed fills, unsupported children, or a theme-disabled child keep the group on the Web. Single clear buttons remain on the Web. Custom button colors, custom back icons/colors, collapsing headers, toolbars inside scrolling content, modal content, scrollable/expanded segments and segment-view integration remain on the Web. Complex slots and unsupported SVG features also fall back to Web. The plugin does not translate arbitrary application CSS into UIKit styles.
+Outside Vertical Bars, standalone clear, solid and outline buttons are excluded. A glass `ion-buttons` group of two or more clear buttons is projected as one surface; its children retain separate actions. Menu buttons can also share that group. A single menu button uses its parent `ion-buttons` as the glass surface, so no Web glass is left underneath the native button. A menu button outside this theme glass remains on the Web. Mixed fills, unsupported children, or a theme-disabled child keep the group on the Web. Single clear buttons remain on the Web. Custom button colors, custom back icons/colors, collapsing headers, toolbars inside scrolling content, modal content, scrollable/expanded segments and segment-view integration remain on the Web. Complex slots and unsupported SVG features also fall back to Web. The plugin does not translate arbitrary application CSS into UIKit styles.
 
 Native glass samples the Web content actually drawn behind it. Existing toolbar backgrounds and header blur still affect that content. For content to scroll beneath a header, use Ionic's normal translucent-header/fullscreen-content layout; the plugin does not move page content or override an application-owned opaque toolbar background.
 
@@ -88,13 +90,15 @@ The native host accepts input only within native controls. Tab interaction and a
 
 ## Searchable tabs
 
-Existing `attachTabBarSearchable(tabBar, fabButton, footer)` registrations automatically use native search when their bottom tab bar and glass search controls are supported. No new component option, route, native setup or page listener is required. Ordinary tab bars continue using `UITabBar`; searchable groups use a persistent `UITabBarController`, `UITab` / `UISearchTab`, and `UISearchController`. The original Capacitor WebView continues to render results and handle navigation.
+Existing `attachTabBarSearchable(tabBar, fabButton, footer)` registrations automatically use native search when their bottom tab bar and glass search controls are supported. No new component option, route, native setup or page listener is required. Ordinary tab bars continue using `UITabBar`; horizontal searchable groups use a persistent `UITabBarController`, `UITab` / `UISearchTab`, and `UISearchController`. The original Capacitor WebView continues to render results and handle navigation.
+
+With vertical bars, the native rail keeps every tab and its selection. SwiftUI’s `searchable` and `searchToolbarBehavior(.minimize)` provide the system search button, field, dismissal control and transitions within the same native navigation surface. Apple determines their placement for the current device layout and focuses the native field when system search opens. Input, focus, clear and submit events use the same bridge as horizontal search. When native search is unavailable, the Web search presentation also preserves vertical tabs.
 
 Search registration does not bypass placement restrictions. Its searchbar and close button must be in fixed footer toolbars. Its trigger must belong to an `ion-fab[slot="fixed"]` directly inside `ion-content`, or directly on the existing non-scrolling `.ion-page` layout. A wrapper inside scrolling content is not a fixed slot.
 
-While a registration is alive, Native UI Shell keeps the searchable controller even when the page is transitioning or temporarily unavailable (`available: false`), instead of demoting back to a separate ordinary control identity. Resting chrome (including Album before search opens) uses the same `UITabBar` + `ShellTabBar.fit` path as ordinary tabs, with the search trigger pinned to the FAB when available; `UISearchTab` is shown only while the search session is active. Flipping availability or entering/leaving search crossfades between those layers. Register before the destination page finishes entering (for example in `ionViewWillEnter`) so the first visit does not paint ordinary tabs and then swap.
+For horizontal tabs, while a registration is alive, Native UI Shell keeps the searchable controller even when the page is transitioning or temporarily unavailable (`available: false`), instead of demoting back to a separate ordinary control identity. Resting chrome (including Album before search opens) uses the same `UITabBar` + `ShellTabBar.fit` path as ordinary tabs, with the search trigger pinned to the FAB when available; `UISearchTab` is shown only while the search session is active. Flipping availability or entering/leaving search crossfades between those layers. Register before the destination page finishes entering (for example in `ionViewWillEnter`) so the first visit does not paint ordinary tabs and then swap.
 
-Opening search preserves the selected Ionic tab and does not automatically show the keyboard (`automaticallyActivatesSearch` stays off). Tap the field or call `ion-searchbar.setFocus()` for the keyboard. While search is active, Native UI Shell freezes Web layout projection and holds Capacitor Keyboard resize at `none`; UIKit owns tab/search chrome (no Ionic `fit` mid-session). Leave re-fits ordinary tabs to `ion-tab-bar` and search to the FAB. Ordinary native tabs keep an optimistic selection until the Web `selected` state catches up. Input events and application `value` updates continue across the bridge until search closes. The trigger's resolved SVG and the search icon are projected from Ionic, including `ion-icon name`.
+With horizontal tabs, opening search preserves the selected Ionic tab and does not automatically show the keyboard (`automaticallyActivatesSearch` stays off). Tap the field or call `ion-searchbar.setFocus()` for the keyboard. While search is active, Native UI Shell freezes Web layout projection and holds Capacitor Keyboard resize at `none`; UIKit owns tab/search chrome (no Ionic `fit` mid-session). Leave re-fits ordinary tabs to `ion-tab-bar` and search to the FAB. Ordinary native tabs keep an optimistic selection until the Web `selected` state catches up. Input events and application `value` updates continue across the bridge until search closes. The trigger's resolved SVG and the search icon are projected from Ionic, including `ion-icon name`.
 
 Native edits pass through Ionic's input handlers, preserving `ionInput` debounce, `ionChange`, `ionFocus`, `ionBlur`, and `ionClear`. Programmatic `value` changes do not emit `ionInput`; synchronous application corrections and stale native input are distinguished. Native editing owns marked text and the caret. Returning through the footer's close action retains the value and does not emit `ionCancel` or `ionClear`.
 
@@ -116,7 +120,7 @@ FAB support covers the standard circular glass appearance, text and resolved sta
 
 Custom host animation or transition declarations on the FAB, list or button keep the group on the Web until removed. Button transforms support the standard identity and hidden-child scale(0), not custom scaling. For children inside a `display:none` list, browsers can report a computed transform of `none` even when a custom transform is declared. Such transforms are checked when layout becomes available; the whole FAB then returns to Web if needed. The plugin does not parse application stylesheets or temporarily open lists to predict hidden layout.
 
-The connection in `src/transition/ios.transition.ts` waits for native retirement before starting the Web animation. Interactive progress and completion/cancellation are queued while that retirement is in progress. Stationary shared tabs are retained. First render and transitions without an animation builder are covered by the startup runtime and Ionic lifecycle events.
+The built-in `iosTransitionAnimation` waits for native retirement before starting the Web animation. Interactive progress and completion/cancellation are queued while that retirement is in progress. Stationary shared tabs are retained. First render and transitions without an animation builder are covered by the startup runtime and Ionic lifecycle events. Default Ionic and custom navigation builders can use the same integration through `withNativeUIShellTransition()`, exported from both the package root and `/vertical-bars`. See [Connect your navigation animation](./iphone-duo-with-original-theme.md#3.-connect-your-navigation-animation) for the setup.
 
 Tab switches skip the Web/native crossfade so a retiring UIKit snapshot cannot linger over the next tab. Detection uses the router URL versus the still-selected tab on `ionViewWillLeave` (and vanilla `ionTabsWillChange` / `ionTabsDidChange` DOM events). Stack pushes and pops keep the normal 180ms handoff.
 
@@ -167,16 +171,30 @@ Suspensions are nestable and `resume()` is idempotent. Native projection resumes
 
 The native material and control appearance follow the running iOS version; an iOS 26 device does not acquire iOS 27's appearance merely by installing this theme.
 
+## Support iPhone Duo (experimental)
+
+iPhone Duo support is experimental, including standalone use without Native UI Shell. It is available in the `1.2.0-0` prerelease alongside Native UI Shell. Its APIs and supported behavior may change.
+
+The standalone Vertical Control Area entry point (`@rdlabo/ionic-theme-ios27/vertical-bars`) and `dist/css/vertical-bars.css` work without loading the iOS 27 theme. Call `enableVerticalControlArea()` for this use case; it projects only controls placed in the vertical area. Apps already calling `enableNativeUIShell()` should keep that single runtime rather than starting both. See [iPhone Duo support](https://docs.rdlabo.dev/projects/ionic-theme-ios27/docs/iphone-duo) for the complete setup, including hinge posture and the split-pane layout for apps that do not use this shell at all.
+
+On supported iOS versions, adding `.ios-theme-vertical-bars` changes only controls that the system relocates into the physical side rail. Native UI Shell presents eligible tabs, back navigation, menu buttons, and toolbar actions through a SwiftUI `TabView` and toolbar once the class is applied. When the OS reports a rail edge — on iPhone Duo linked against iOS 27.1 or later — it must agree with the applied placement; a disagreeing report keeps the rail on the Web. Older toolchains that cannot report an edge trust the DOM placement directly. SwiftUI owns their adaptive placement and Liquid Glass appearance; Ionic remains the source of labels, icons, selected/disabled state, routing, form submission, and click handlers.
+
+The SwiftUI surface is clipped and hit-tested to the system rail. Web content remains visible and interactive outside that physical region. The runtime optimistically updates tab selection before forwarding the action to the original `ion-tab-button`, using the same event and stale-revision protection as the other native controls. A topmost full-width modal supplies its own eligible toolbar actions and rail bounds, including when it is a sheet. Centered modals, menus, and popovers keep their own toolbar layout. Modal placement follows the visible dialog width rather than its type or hinge posture.
+
+In Vertical Bars, fixed-toolbar `ion-button` actions use an `ion-icon` or SVG with `slot="icon-only"`. All fills (`default`, `clear`, `solid`, and `outline`) and Ionic colors are eligible; submit buttons follow the same placement rule. Solid actions retain their background color and outline actions retain their border color and width. Actions without `icon-only` stay horizontal. Scrolling and explicitly opted-out controls retain their Web presentation. Add `.ios-theme-horizontal-only` to an `ion-buttons` group or individual `ion-button` to keep it in the horizontal Web toolbar. On Web, Android, older iOS, or when native projection is unavailable during setup, the Web projection remains the fallback.
+
+For standalone setup while keeping your existing theme, see [iPhone Duo with your existing theme](https://docs.rdlabo.dev/projects/ionic-theme-ios27/docs/iphone-duo-with-original-theme).
+
 ## Native UI Shell API
 
 The generated reference below documents the handle returned by `enableNativeUIShell()`. The underlying Capacitor bridge and its control-snapshot protocol are implementation details.
 
 <docgen-index>
 
-- [`getStatus()`](#getstatus)
-- [`suspend()`](#suspend)
-- [`destroy()`](#destroy)
-- [Interfaces](#interfaces)
+* [`getStatus()`](#getstatus)
+* [`suspend()`](#suspend)
+* [`destroy()`](#destroy)
+* [Interfaces](#interfaces)
 
 </docgen-index>
 
@@ -193,7 +211,8 @@ Returns the current Web/native projection state.
 
 **Returns:** <code><a href="#nativeuishellstatus">NativeUIShellStatus</a></code>
 
----
+--------------------
+
 
 ### suspend()
 
@@ -205,7 +224,8 @@ Restores projected controls to the Web until the returned lease is resumed.
 
 **Returns:** <code>Promise&lt;<a href="#nativeuishellsuspension">NativeUIShellSuspension</a>&gt;</code>
 
----
+--------------------
+
 
 ### destroy()
 
@@ -215,9 +235,11 @@ destroy() => Promise<void>
 
 Stops synchronization, restores Web controls and releases native resources.
 
----
+--------------------
+
 
 ### Interfaces
+
 
 #### NativeUIShellStatus
 
@@ -227,6 +249,7 @@ Stops synchronization, restores Web controls and releases native resources.
 | **`projected`** | <code>number</code>                         |
 | **`updates`**   | <code>number</code>                         |
 | **`reason`**    | <code>string</code>                         |
+
 
 #### NativeUIShellSuspension
 
